@@ -39,6 +39,21 @@ def calc_temps(start_date, end_date):
     return session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
         filter(Measurement.date >= start_date).filter(Measurement.date <= end_date).all()
 
+def daily_normals(date):
+    """Daily Normals.
+    
+    Args:
+        date (str): A date string in the format '%m-%d'
+        
+    Returns:
+        A list of tuples containing the daily normals, tmin, tavg, and tmax
+    
+    """
+    
+    sel = [func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)]
+    return session.query(*sel).filter(func.strftime("%m-%d", Measurement.date) == date).all()
+    
+
 app = Flask(__name__)
 
 @app.route('/')
@@ -87,15 +102,23 @@ def temperature():
 
     return jsonify(df_station_temp.sort_values(by='date').to_dict('records'))
 
-@app.route('/api/v1.0/<start>', defaults={'end': False})
-@app.route('/api/v1.0/<start>/<end>')
-def trip_temp(start, end):
-    if end == False:
-        end_date = session.query(func.max(Measurement.date)).first()[0]
-    else:
-        end_date = end
+@app.route('/api/v1.0/<start>')
+def all_temps_stats(start):
+    #dates = session.query(Measurement.date).filter(func.DATE(Measurement.date) > start_date).all()
+    #print(query)
+    start_date = start
+    df = pd.read_sql_query(session.query(Measurement.date,
+                        func.min(Measurement.tobs).label("min"),
+                        func.avg(Measurement.tobs).label("avg"),
+                        func.max(Measurement.tobs).label("max"))\
+          .group_by(Measurement.date)\
+          .filter(Measurement.date > start_date)\
+          .statement, engine)
+    return jsonify(df.to_dict(orient='records'))
 
-    results = calc_temps(start, end_date)[0]
+@app.route('/api/v1.0/<start>/<end>')
+def trip_temp_stats(start, end):
+    results = calc_temps(start, end)[0]
     result_dict  = {"min": results[0], "average": results[1], "max": results[2]}
     return(jsonify(result_dict))
 
